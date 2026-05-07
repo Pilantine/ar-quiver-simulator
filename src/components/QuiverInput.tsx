@@ -19,7 +19,8 @@ function dnEdgeEndpoints(k: number): [number, number] {
 
 export default function QuiverInput({ onGenerate, onTypeChange, onReset }: Props) {
   const [quiverType, setQuiverType] = useState<QuiverType>('A')
-  const [n, setN] = useState(4)
+  const [nStr, setNStr] = useState('4')
+  const n = nStr === '' ? 0 : parseInt(nStr, 10)
 
   const [edgeDirs, setEdgeDirs] = useState<boolean[]>(Array(6).fill(true))
 
@@ -84,8 +85,8 @@ export default function QuiverInput({ onGenerate, onTypeChange, onReset }: Props
           type="number"
           min={quiverType === 'D' ? 4 : 1}
           max={7}
-          value={n}
-          onChange={e => { setN(Number(e.target.value)); onReset?.() }}
+          value={nStr}
+          onChange={e => { setNStr(e.target.value); if (e.target.value !== '') onReset?.() }}
           className="w-16 border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
         />
         <span className="text-xs text-gray-400">{quiverType === 'D' ? '(4 – 7)' : '(1 – 7)'}</span>

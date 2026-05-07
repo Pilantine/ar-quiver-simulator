@@ -594,7 +594,7 @@ export default function App() {
       <div className="flex flex-1 overflow-hidden">
         <aside
           ref={asideRef}
-          className="bg-white flex flex-col overflow-hidden"
+          className={`bg-white flex flex-col ${isMobile ? 'overflow-y-auto' : 'overflow-hidden'}`}
           style={isMobile ? {
             position: 'fixed', bottom: 0, left: 0, right: 0,
             height: drawerOpen ? '60vh' : 0,
@@ -1331,13 +1331,22 @@ export default function App() {
           {state && q ? (
             <>
               <div className="px-4 py-2 bg-white border-b border-gray-200 shrink-0 flex flex-col gap-1.5">
-                <div className="flex items-center gap-3">
-                <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider flex-1 flex items-center gap-2">
-                  {view === 'ar'
-                    ? `Auslander–Reiten Quiver — ${q.quiverType}_${q.n} (${q.orientation})`
-                    : view === 'lattice'
-                    ? `Tilting Lattice — A_${q.n} (${tiltingLattice?.nodes.length ?? 0} tilting modules)`
-                    : `Tilting Lattice — D_${q.n} (${dTiltingLattice?.nodes.length ?? 0} tilting modules)`}
+                <div className="flex flex-wrap items-center gap-2 min-w-0">
+                <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider flex-1 flex items-center gap-2 min-w-0 overflow-hidden">
+                  <span className="truncate shrink hidden md:inline">
+                    {view === 'ar'
+                      ? `Auslander–Reiten Quiver — ${q.quiverType}_${q.n} (${q.orientation})`
+                      : view === 'lattice'
+                      ? `Tilting Lattice — A_${q.n} (${tiltingLattice?.nodes.length ?? 0} tilting modules)`
+                      : `Tilting Lattice — D_${q.n} (${dTiltingLattice?.nodes.length ?? 0} tilting modules)`}
+                  </span>
+                  <span className="truncate shrink md:hidden">
+                    {view === 'ar'
+                      ? `AR — ${q.quiverType}_${q.n}`
+                      : view === 'lattice'
+                      ? `Tilting A_${q.n}`
+                      : `Tilting D_${q.n}`}
+                  </span>
                   {view === 'ar' && (
                     <button
                       onClick={() => setShowTauArrows(v => !v)}
@@ -1346,7 +1355,7 @@ export default function App() {
                   )}
                 </span>
                 {view === 'lattice' && (
-                  <span className="flex items-center gap-4 text-xs text-gray-500 border border-gray-200 rounded-lg px-3 py-1.5 bg-gray-50">
+                  <span className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-gray-500 border border-gray-200 rounded-lg px-3 py-1.5 bg-gray-50">
                     <span className="flex items-center gap-1.5">
                       <span className="inline-block w-4 h-4 rounded border-2 border-[#dc2626] bg-[#fee2e2]" />
                       All-projectives
@@ -1376,7 +1385,7 @@ export default function App() {
                   </span>
                 )}
                 {view === 'dlattice' && (
-                  <span className="flex items-center gap-4 text-xs text-gray-500 border border-gray-200 rounded-lg px-3 py-1.5 bg-gray-50">
+                  <span className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-gray-500 border border-gray-200 rounded-lg px-3 py-1.5 bg-gray-50">
                     <span className="flex items-center gap-1.5">
                       <span className="inline-block w-4 h-4 rounded border-2 border-[#dc2626] bg-[#fee2e2]" />
                       All-projectives
