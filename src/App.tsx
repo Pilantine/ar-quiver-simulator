@@ -558,6 +558,7 @@ export default function App() {
       <header className="bg-white border-b border-gray-200 px-6 py-3 flex items-center gap-3 shrink-0">
         <span className="text-lg font-bold text-gray-800">AR Quiver Simulator</span>
         <span className="text-xs text-gray-400">Auslander–Reiten theory</span>
+        <span className="text-xs text-gray-400">by Sunny Roy – sunny.roy@usherbrooke.ca</span>
       </header>
 
       <div className="flex flex-1 overflow-hidden">
