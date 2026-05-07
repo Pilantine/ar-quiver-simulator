@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import type { Arrow, Quiver, ARQuiver as ARQuiverType, DARQuiver, Orientation, QuiverType, Module, DModule, Point, Rect } from './types/mathTypes'
 import { buildQuiver } from './math/quiver'
 import { buildDnQuiver } from './math/typeDQuiver'
@@ -94,9 +94,19 @@ function combinations<T>(arr: T[], k: number): T[][] {
 
 export default function App() {
   const [panelTopHeight, setPanelTopHeight] = useState<number | null>(null)
+  const [sidebarWidth, setSidebarWidth] = useState(() => parseInt(localStorage.getItem('sidebarWidth') ?? '288', 10))
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
   const asideRef = useRef<HTMLElement>(null)
   const topPanelRef = useRef<HTMLDivElement>(null)
   const dragging = useRef(false)
+  const hDragging = useRef(false)
+
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 768)
+    window.addEventListener('resize', handler)
+    return () => window.removeEventListener('resize', handler)
+  }, [])
 
 
   const onDragStart = useCallback((e: React.MouseEvent) => {
@@ -115,6 +125,26 @@ export default function App() {
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
   }, [panelTopHeight])
+
+  const onHDragStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    hDragging.current = true
+    const startX = e.clientX
+    const startW = sidebarWidth
+    const onMove = (ev: MouseEvent) => {
+      if (!hDragging.current) return
+      const newW = Math.max(180, Math.min(520, startW + ev.clientX - startX))
+      setSidebarWidth(newW)
+      localStorage.setItem('sidebarWidth', String(newW))
+    }
+    const onUp = () => {
+      hDragging.current = false
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }, [sidebarWidth])
 
   const [state, setState] = useState<SimState | null>(null)
   const [sesList, setSesList] = useState<SESWithRect[] | null>(null)
@@ -562,7 +592,26 @@ export default function App() {
       </header>
 
       <div className="flex flex-1 overflow-hidden">
-        <aside ref={asideRef} className="w-72 shrink-0 bg-white border-r border-gray-200 flex flex-col overflow-hidden">
+        <aside
+          ref={asideRef}
+          className="bg-white flex flex-col overflow-hidden"
+          style={isMobile ? {
+            position: 'fixed', bottom: 0, left: 0, right: 0,
+            height: drawerOpen ? '60vh' : 0,
+            zIndex: 50,
+            transition: 'height 0.25s ease',
+            borderTop: '1px solid #e5e7eb',
+          } : {
+            width: sidebarWidth,
+            flexShrink: 0,
+            borderRight: '1px solid #e5e7eb',
+          }}
+        >
+          {isMobile && (
+            <div className="flex justify-center py-2 shrink-0 cursor-pointer" onClick={() => setDrawerOpen(false)}>
+              <div className="w-10 h-1 rounded-full bg-gray-300" />
+            </div>
+          )}
           <div ref={topPanelRef} style={panelTopHeight !== null ? { height: panelTopHeight, minHeight: 120 } : {}} className={`flex flex-col shrink-0 ${panelTopHeight !== null ? 'overflow-y-auto' : ''}`}>
 
           <section className="p-4 border-b border-gray-100">
@@ -1271,6 +1320,13 @@ export default function App() {
           </div>
         </aside>
 
+        {!isMobile && (
+          <div
+            className="w-1.5 shrink-0 cursor-col-resize bg-gray-200 hover:bg-indigo-400 active:bg-indigo-500 transition-colors"
+            onMouseDown={onHDragStart}
+          />
+        )}
+
         <main className="flex-1 flex flex-col overflow-hidden">
           {state && q ? (
             <>
@@ -1479,6 +1535,20 @@ export default function App() {
           )}
         </main>
       </div>
+
+      {isMobile && (
+        <>
+          {drawerOpen && (
+            <div className="fixed inset-0 bg-black/30 z-40" onClick={() => setDrawerOpen(false)} />
+          )}
+          <button
+            onClick={() => setDrawerOpen(v => !v)}
+            className="fixed bottom-5 left-4 z-50 bg-indigo-600 text-white rounded-full px-4 py-2 text-sm font-semibold shadow-lg"
+          >
+            {drawerOpen ? '✕ Close' : '☰ Panel'}
+          </button>
+        </>
+      )}
     </div>
   )
 }
