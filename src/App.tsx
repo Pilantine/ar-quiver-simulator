@@ -111,6 +111,7 @@ export default function App() {
 
 
 
+
   const onDragStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
     dragging.current = true
@@ -693,7 +694,7 @@ export default function App() {
               <div className="w-10 h-1 rounded-full bg-gray-300" />
             </div>
           )}
-          <div ref={topPanelRef} style={panelTopHeight !== null ? { height: panelTopHeight, minHeight: 120 } : {}} className={`flex flex-col shrink-0 ${panelTopHeight !== null ? 'overflow-y-auto' : ''}`}>
+          <div ref={topPanelRef} style={panelTopHeight !== null ? { height: panelTopHeight, minHeight: 120, scrollbarGutter: 'stable' } : { maxHeight: 'calc(100% - 80px)', scrollbarGutter: 'stable' }} className="flex flex-col shrink-0 overflow-y-auto">
 
           <section className="p-4 border-b border-gray-100">
             <div className="flex items-center gap-2 mb-3">
@@ -1011,7 +1012,7 @@ export default function App() {
           {/* Drag handle */}
           <div onMouseDown={onDragStart}
             className="h-1.5 bg-gray-200 hover:bg-blue-400 cursor-row-resize shrink-0 transition-colors" />
-          <div className={panelTopHeight !== null ? 'flex-1 flex flex-col overflow-y-auto' : 'flex flex-col'}>
+          <div className="flex-1 flex flex-col overflow-y-auto" style={{ scrollbarGutter: 'stable' }}>
 
           {gsMode && (
             <section className="p-4 border-b border-gray-100 text-xs text-gray-500 flex flex-col gap-1">
