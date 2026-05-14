@@ -20,6 +20,10 @@ interface Props {
   sesRects?: Rect[]
   gsHighlight?: GSHighlight | null
   showTauArrows?: boolean
+  highlightedIds?: Set<string> | null
+  highlightedIdsRed?: Set<string> | null
+  highlightedIdsViolet?: Set<string> | null
+  highlightedIdsOrange?: Set<string> | null
 }
 
 const R = 22
@@ -41,7 +45,7 @@ function clampedEndpoint(
   return [x1 + ux * r, y1 + uy * r, x2 - ux * r, y2 - uy * r]
 }
 
-export default function ARQuiverViewer({ arQuiver, quiver, onPositions, onYPositions, selectedSES, badges = [], selectedTilting, sesRects = [], gsHighlight, showTauArrows = false }: Props) {
+export default function ARQuiverViewer({ arQuiver, quiver, onPositions, onYPositions, selectedSES, badges = [], selectedTilting, sesRects = [], gsHighlight, showTauArrows = false, highlightedIds, highlightedIdsRed, highlightedIdsViolet, highlightedIdsOrange }: Props) {
   const { n } = quiver
 
   const projX: number[] = new Array(n + 1).fill(0)
@@ -284,10 +288,14 @@ export default function ARQuiverViewer({ arQuiver, quiver, onPositions, onYPosit
           const gsColor = gsHighlight?.get(p.id)
           const ses = hlNodes.has(p.id)
           const tilt = tiltNodes.has(p.id)
-          const fill = gsColor ? gsColor.fill : tilt ? '#ede9fe' : ses ? '#bbf7d0' : 'white'
-          const stroke = gsColor ? gsColor.stroke : tilt ? '#7c3aed' : ses ? '#16a34a' : '#6366f1'
-          const textFill = gsColor ? gsColor.textFill : tilt ? '#4c1d95' : ses ? '#14532d' : '#4f46e5'
-          const strokeW = (ses || tilt || gsColor) ? 2.5 : 1.5
+          const mar = highlightedIds?.has(p.id)
+          const cjr = highlightedIdsRed?.has(p.id)
+          const vio = highlightedIdsViolet?.has(p.id)
+          const ora = highlightedIdsOrange?.has(p.id)
+          const fill = gsColor ? gsColor.fill : vio ? '#ede9fe' : cjr ? '#fee2e2' : ora ? '#ffedd5' : mar ? '#fef9c3' : tilt ? '#ede9fe' : ses ? '#bbf7d0' : 'white'
+          const stroke = gsColor ? gsColor.stroke : vio ? '#7c3aed' : cjr ? '#dc2626' : ora ? '#ea580c' : mar ? '#eab308' : tilt ? '#7c3aed' : ses ? '#16a34a' : '#6366f1'
+          const textFill = gsColor ? gsColor.textFill : vio ? '#4c1d95' : cjr ? '#7f1d1d' : ora ? '#7c2d12' : mar ? '#713f12' : tilt ? '#4c1d95' : ses ? '#14532d' : '#4f46e5'
+          const strokeW = (ses || tilt || gsColor || mar || cjr || vio || ora) ? 2.5 : 1.5
           return (
             <g key={p.id} transform={`translate(${p.cx}, ${p.cy})`}>
               <circle r={R} fill={fill} stroke={stroke} strokeWidth={strokeW} />

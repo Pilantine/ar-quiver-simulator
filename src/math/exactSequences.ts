@@ -169,21 +169,42 @@ export function computeDExactStructure(
   return sesList.filter(s => inStructure.has(sesKey(s)))
 }
 
-export function computeSES(modules: Module[], n: number): SES[] {
+// Middle term [p,q] must share an endpoint with the given term [i,j]
+function sharesEndpoint(mid: Module, term: Module): boolean {
+  return mid.i === term.i || mid.j === term.j
+}
+
+interface SESOptions {
+  xPositions?: Map<string, number>
+}
+
+export function computeSES(modules: Module[], n: number, opts?: SESOptions): SES[] {
   const results: SES[] = []
   const dims = new Map(modules.map(m => [m.id, dimVec(m, n)]))
+  const xPos = opts?.xPositions
 
   for (const left of modules) {
+    const lx = xPos?.get(left.id)
     for (const right of modules) {
       if (left.id === right.id) continue
+      const rx = xPos?.get(right.id)
+      // Constraint 1: left must be visually left of right
+      if (lx !== undefined && rx !== undefined && rx <= lx) continue
+
       const target = addVecs(dims.get(left.id)!, dims.get(right.id)!)
 
       // Case a: single middle term
       for (const mid of modules) {
         if (mid.id === left.id || mid.id === right.id) continue
-        if (vecsEqual(dims.get(mid.id)!, target)) {
-          results.push({ left, middle: [mid], right })
+        if (!vecsEqual(dims.get(mid.id)!, target)) continue
+        // Constraint 2: middle x between left and right
+        if (xPos) {
+          const mx = xPos.get(mid.id)
+          if (lx !== undefined && rx !== undefined && mx !== undefined && !(lx < mx && mx < rx)) continue
         }
+        // Constraint 3: middle shares endpoint with left AND with right
+        if (xPos && (!sharesEndpoint(mid, left) || !sharesEndpoint(mid, right))) continue
+        results.push({ left, middle: [mid], right })
       }
 
       // Case b: two middle terms
@@ -193,9 +214,21 @@ export function computeSES(modules: Module[], n: number): SES[] {
           if (b.id === left.id && c.id === right.id) continue
           if (b.id === right.id && c.id === left.id) continue
           const sum = addVecs(dims.get(b.id)!, dims.get(c.id)!)
-          if (vecsEqual(sum, target)) {
-            results.push({ left, middle: [b, c], right })
+          if (!vecsEqual(sum, target)) continue
+          // Constraint 2: both middles x between left and right
+          if (xPos) {
+            const bx = xPos.get(b.id), cx = xPos.get(c.id)
+            if (lx !== undefined && rx !== undefined) {
+              if (bx !== undefined && !(lx < bx && bx < rx)) continue
+              if (cx !== undefined && !(lx < cx && cx < rx)) continue
+            }
           }
+          // Constraint 3: each middle shares endpoint with left AND with right
+          if (xPos && (
+            !sharesEndpoint(b, left) || !sharesEndpoint(b, right) ||
+            !sharesEndpoint(c, left) || !sharesEndpoint(c, right)
+          )) continue
+          results.push({ left, middle: [b, c], right })
         }
       }
     }

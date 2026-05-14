@@ -6,6 +6,7 @@ import { computeDnARQuiver } from './math/typeDArQuiver'
 import { computeARQuiver } from './math/arQuiver'
 import { generateIndecomposables } from './math/typeAIndecomposables'
 import { computeSES, computeDSES, computeDExactStructure, type SES } from './math/exactSequences'
+import { computeMAR } from './math/mar'
 import type { DSES } from './types/mathTypes'
 import QuiverInput from './components/QuiverInput'
 import ARQuiverViewer from './components/ARQuiverViewer'
@@ -109,6 +110,7 @@ export default function App() {
   }, [])
 
 
+
   const onDragStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
     dragging.current = true
@@ -185,6 +187,26 @@ export default function App() {
   const [dGsSteps, setDGsSteps] = useState<DModule[][] | null>(null)
   const [selectedDGSStep, setSelectedDGSStep] = useState<number | null>(null)
   const [dShowExactComponents, setDShowExactComponents] = useState(false)
+  const [moreFuncOpen, setMoreFuncOpen] = useState(false)
+  const [selectedMoreFunc, setSelectedMoreFunc] = useState<'mar' | 'cjr' | 'mar-cjr' | null>(null)
+  const [marResult, setMarResult] = useState<Module[][] | null>(null)
+  const [selectedMARIndex, setSelectedMARIndex] = useState<number | null>(null)
+  const [cjrResult, setCjrResult] = useState<Module[][] | null>(null)
+  const [selectedCJRIndex, setSelectedCJRIndex] = useState<number | null>(null)
+  const [marCjrResult, setMarCjrResult] = useState<{ marIdx: number; cjrIdx: number; modules: Module[] }[] | null>(null)
+  const [selectedMarCjrIndex, setSelectedMarCjrIndex] = useState<number | null>(null)
+  const [marCjrOverlay, setMarCjrOverlay] = useState<{ mar: boolean; cjr: boolean; inter: boolean }>({ mar: false, cjr: false, inter: true })
+  const [marCjrVerify, setMarCjrVerify] = useState<{ ok: boolean; missing: Module[][] } | null>(null)
+  const [selectedMissingTilting, setSelectedMissingTilting] = useState<Set<string> | null>(null)
+
+  function resetMoreFunc() {
+    setMoreFuncOpen(false); setSelectedMoreFunc(null)
+    setMarResult(null); setSelectedMARIndex(null)
+    setCjrResult(null); setSelectedCJRIndex(null)
+    setMarCjrResult(null); setSelectedMarCjrIndex(null)
+    setMarCjrOverlay({ mar: false, cjr: false, inter: true }); setMarCjrVerify(null)
+    setSelectedMissingTilting(null)
+  }
 
   function handleReset() {
     setState(null)
@@ -200,6 +222,7 @@ export default function App() {
     setShowExactComponents(false); setShowMutationLabels(false); setExtraStructureSeed(0)
     setShowTauArrows(false)
     setDTiltingLattice(null); setDGsMode(false); setDGsSteps(null); setSelectedDGSStep(null); setDShowExactComponents(false)
+    resetMoreFunc()
   }
 
   function handleGenerate(n: number, orientation: Orientation, quiverType: QuiverType = 'A', customArrows?: Arrow[]) {
@@ -233,23 +256,13 @@ export default function App() {
     setShowMutationLabels(false)
     setExtraStructureSeed(0)
     setDTiltingLattice(null); setDGsMode(false); setDGsSteps(null); setSelectedDGSStep(null); setDShowExactComponents(false)
+    resetMoreFunc()
   }
 
   function handleShowSES() {
     if (!state) return
     const modules = generateIndecomposables(state.quiver.n)
-    const all = computeSES(modules, state.quiver.n)
-    const filtered = all.filter(ses => {
-      const lx = xPositions.get(ses.left.id)
-      const rx = xPositions.get(ses.right.id)
-      if (lx === undefined || rx === undefined) return true
-      if (lx >= rx) return false
-      return ses.middle.every(m => {
-        const mx = xPositions.get(m.id)
-        if (mx === undefined) return true
-        return lx < mx && mx < rx
-      })
-    })
+    const filtered = computeSES(modules, state.quiver.n, { xPositions })
     const enriched: SESWithRect[] = filtered.map(ses => ({
       ...ses,
       rect: computeRect(ses, xPositions, yPositions),
@@ -299,19 +312,7 @@ export default function App() {
     if (!state) return []
     if (sesList) return sesList
     const modules = generateIndecomposables(state.quiver.n)
-    const all = computeSES(modules, state.quiver.n)
-    return all
-      .filter(ses => {
-        const lx = xPositions.get(ses.left.id)
-        const rx = xPositions.get(ses.right.id)
-        if (lx === undefined || rx === undefined) return true
-        if (lx >= rx) return false
-        return ses.middle.every(m => {
-          const mx = xPositions.get(m.id)
-          if (mx === undefined) return true
-          return lx < mx && mx < rx
-        })
-      })
+    return computeSES(modules, state.quiver.n, { xPositions })
       .map(ses => ({ ...ses, rect: computeRect(ses, xPositions, yPositions) }))
   }
 
@@ -404,6 +405,86 @@ export default function App() {
       steps.push(toModules(current))
     }
     setGsSteps(steps)
+  }
+
+  function handleComputeCJR() {
+    if (!state) return
+    const modules = generateIndecomposables(state.quiver.n)
+    const allModulesMap = new Map(modules.map(m => [m.id, m]))
+
+    // 1. Get all SES (with rects)
+    const ses = getActiveSES()
+
+    // 2. Identify AR sequences and compute their centers
+    const localArSES = ses.filter(s => {
+      const lx = xPositions.get(s.left.id), rx = xPositions.get(s.right.id)
+      return lx !== undefined && rx !== undefined && Math.abs(rx - lx) === 160
+    })
+    const localArCenters = localArSES.flatMap((s, i) => {
+      const lx = xPositions.get(s.left.id), ly = yPositions.get(s.left.id)
+      const rx = xPositions.get(s.right.id)
+      if (lx === undefined || ly === undefined || rx === undefined) return []
+      return [{ idx: i + 1, center: { x: (lx + rx) / 2, y: ly } }]
+    })
+
+    // 3. Diamond = AR sequences with 2 middle terms
+    const diamondSet = new Set(
+      localArSES.map((s, i) => s.middle.length === 2 ? i + 1 : null).filter((x): x is number => x !== null)
+    )
+
+    // 4. SES in E_diamond: rects that only contain diamond AR centers
+    const sesInDiamond = ses.filter(s => {
+      if (!s.rect) return false
+      return localArCenters.every(({ idx, center }) =>
+        !pointInParallelogram(center, s.rect!) || diamondSet.has(idx)
+      )
+    })
+
+    // 5. Get or compute tilting modules
+    let tilts = tiltingList
+    if (!tilts) {
+      const incompatible = new Set<string>()
+      for (const s of ses) {
+        incompatible.add(`${s.left.id}|${s.right.id}`)
+        incompatible.add(`${s.right.id}|${s.left.id}`)
+      }
+      tilts = []
+      for (const subset of combinations(modules, state.quiver.n)) {
+        let rigid = true
+        outer: for (let i = 0; i < subset.length; i++) {
+          for (let j = i + 1; j < subset.length; j++) {
+            if (incompatible.has(`${subset[i].id}|${subset[j].id}`)) { rigid = false; break outer }
+          }
+        }
+        if (rigid) tilts.push(subset)
+      }
+    }
+
+    // 6. Run GS_E_diamond until convergence for each tilting, deduplicate
+    const seen = new Set<string>()
+    const cjrList: Module[][] = []
+
+    for (const T of tilts) {
+      let current = new Set(T.map(m => m.id))
+      while (true) {
+        const next = new Set(current)
+        for (const s of sesInDiamond) {
+          if (s.middle.every(m => current.has(m.id))) {
+            next.add(s.left.id)
+            next.add(s.right.id)
+          }
+        }
+        if (next.size === current.size) break
+        current = next
+      }
+      const key = [...current].sort().join(',')
+      if (!seen.has(key)) {
+        seen.add(key)
+        cjrList.push([...current].map(id => allModulesMap.get(id)!).filter(Boolean))
+      }
+    }
+
+    setCjrResult(cjrList)
   }
 
   function getActiveDSES(): DSES[] {
@@ -729,6 +810,200 @@ export default function App() {
                   <p className="text-[10px] text-gray-400 mt-0.5 px-1">Apply the Gen-Sub operator: pick an exact structure and a tilting module</p>
                 </div>
               )}
+
+              {/* More functionalities */}
+              <div>
+                <button
+                  onClick={() => { setMoreFuncOpen(v => !v); setSelectedMoreFunc(null) }}
+                  className="w-full text-sm font-semibold py-2 px-4 rounded transition-colors bg-gray-100 hover:bg-gray-200 text-gray-700 flex items-center justify-between"
+                >
+                  <span>More functionalities</span>
+                  <span className="text-xs">{moreFuncOpen ? '▲' : '▼'}</span>
+                </button>
+                {moreFuncOpen && (
+                  <div className="mt-1 flex flex-col gap-1">
+                    <button
+                      onClick={() => setSelectedMoreFunc(v => v === 'mar' ? null : 'mar')}
+                      className={`w-full text-left text-xs py-1.5 px-3 rounded transition-colors ${selectedMoreFunc === 'mar' ? 'bg-indigo-100 text-indigo-800 font-semibold' : 'bg-gray-50 hover:bg-gray-100 text-gray-600'}`}
+                    >
+                      List all MAR modules
+                    </button>
+                    <button
+                      onClick={() => setSelectedMoreFunc(v => v === 'cjr' ? null : 'cjr')}
+                      className={`w-full text-left text-xs py-1.5 px-3 rounded transition-colors ${selectedMoreFunc === 'cjr' ? 'bg-indigo-100 text-indigo-800 font-semibold' : 'bg-gray-50 hover:bg-gray-100 text-gray-600'}`}
+                    >
+                      List all CJR (GS<sub><span style={{fontStyle:'italic',fontFamily:'serif'}}>ℰ</span><span style={{fontSize:'0.8em'}}>◇</span></sub>(T)) subcategories
+                    </button>
+                    <button
+                      onClick={() => setSelectedMoreFunc(v => v === 'mar-cjr' ? null : 'mar-cjr')}
+                      className={`w-full text-left text-xs py-1.5 px-3 rounded transition-colors ${selectedMoreFunc === 'mar-cjr' ? 'bg-indigo-100 text-indigo-800 font-semibold' : 'bg-gray-50 hover:bg-gray-100 text-gray-600'}`}
+                    >
+                      MAR ∩ CJR intersections
+                    </button>
+                    {selectedMoreFunc && (
+                      <button
+                        onClick={() => {
+                          if (selectedMoreFunc === 'cjr') { handleComputeCJR(); return }
+                          if (selectedMoreFunc === 'mar-cjr' && state) {
+                            const modules = generateIndecomposables(state.quiver.n)
+                            // Compute MAR if needed
+                            let mar = marResult
+                            if (!mar) {
+                              const ses = computeSES(modules, state.quiver.n, { xPositions })
+                              const localArSES = ses.filter(s => { const lx = xPositions.get(s.left.id), rx = xPositions.get(s.right.id); return lx !== undefined && rx !== undefined && Math.abs(rx - lx) === 160 })
+                              mar = computeMAR(modules, ses, localArSES, state.quiver.n)
+                              setMarResult(mar)
+                            }
+                            // Compute CJR if needed
+                            let cjr = cjrResult
+                            if (!cjr) {
+                              handleComputeCJR()
+                              // handleComputeCJR sets state async, so compute inline too
+                              const ses = getActiveSES()
+                              const localArSES = ses.filter(s => { const lx = xPositions.get(s.left.id), rx = xPositions.get(s.right.id); return lx !== undefined && rx !== undefined && Math.abs(rx - lx) === 160 })
+                              const localArCenters = localArSES.flatMap((s, i) => { const lx = xPositions.get(s.left.id), ly = yPositions.get(s.left.id), rx = xPositions.get(s.right.id); if (lx === undefined || ly === undefined || rx === undefined) return []; return [{ idx: i + 1, center: { x: (lx + rx) / 2, y: ly } }] })
+                              const diamondSet = new Set(localArSES.map((s, i) => s.middle.length === 2 ? i + 1 : null).filter((x): x is number => x !== null))
+                              const sesInDiamond = ses.filter(s => { if (!s.rect) return false; return localArCenters.every(({ idx, center }) => !pointInParallelogram(center, s.rect!) || diamondSet.has(idx)) })
+                              let tilts = tiltingList
+                              if (!tilts) {
+                                const incompatible = new Set<string>()
+                                for (const s of ses) { incompatible.add(`${s.left.id}|${s.right.id}`); incompatible.add(`${s.right.id}|${s.left.id}`) }
+                                tilts = []
+                                for (const subset of combinations(modules, state.quiver.n)) {
+                                  let rigid = true
+                                  outer: for (let i = 0; i < subset.length; i++) { for (let j = i + 1; j < subset.length; j++) { if (incompatible.has(`${subset[i].id}|${subset[j].id}`)) { rigid = false; break outer } } }
+                                  if (rigid) tilts.push(subset)
+                                }
+                              }
+                              const allModulesMap = new Map(modules.map(m => [m.id, m]))
+                              const seen = new Set<string>()
+                              cjr = []
+                              for (const T of tilts) {
+                                let current = new Set(T.map(m => m.id))
+                                while (true) { const next = new Set(current); for (const s of sesInDiamond) { if (s.middle.every(m => current.has(m.id))) { next.add(s.left.id); next.add(s.right.id) } }; if (next.size === current.size) break; current = next }
+                                const key = [...current].sort().join(',')
+                                if (!seen.has(key)) { seen.add(key); cjr.push([...current].map(id => allModulesMap.get(id)!).filter(Boolean)) }
+                              }
+                              setCjrResult(cjr)
+                            }
+                            // Compute intersections
+                            const pairs: { marIdx: number; cjrIdx: number; modules: Module[] }[] = []
+                            for (let i = 0; i < mar.length; i++) {
+                              const marIds = new Set(mar[i].map(m => m.id))
+                              for (let j = 0; j < cjr.length; j++) {
+                                pairs.push({ marIdx: i, cjrIdx: j, modules: cjr[j].filter(m => marIds.has(m.id)) })
+                              }
+                            }
+                            setMarCjrResult(pairs)
+                            return
+                          }
+                          if (selectedMoreFunc === 'mar' && state) {
+                            const modules = generateIndecomposables(state.quiver.n)
+                            const ses = computeSES(modules, state.quiver.n, { xPositions })
+                            const localArSES = ses.filter(s => { const lx = xPositions.get(s.left.id), rx = xPositions.get(s.right.id); return lx !== undefined && rx !== undefined && Math.abs(rx - lx) === 160 })
+                            const result = computeMAR(modules, ses, localArSES, state.quiver.n)
+                            setMarResult(result)
+                          }
+                        }}
+                        className="mt-1 w-full bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-semibold py-1.5 px-4 rounded transition-colors"
+                      >
+                        Compute
+                      </button>
+                    )}
+                    {selectedMoreFunc === 'mar' && marResult && (
+                      <div className="mt-2 flex flex-col gap-1">
+                        <p className="text-[10px] text-gray-500 font-semibold">{marResult.length} MAR module{marResult.length !== 1 ? 's' : ''}:</p>
+                        {marResult.map((mar, i) => (
+                          <button
+                            key={i}
+                            onClick={() => setSelectedMARIndex(idx => idx === i ? null : i)}
+                            className={`text-left text-[10px] font-mono rounded px-2 py-1 transition-colors ${selectedMARIndex === i ? 'bg-yellow-100 text-yellow-900 border border-yellow-400' : 'bg-gray-50 text-gray-700 hover:bg-yellow-50'}`}
+                          >
+                            {mar.map(m => m.label).join(' ⊕ ')}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {selectedMoreFunc === 'cjr' && cjrResult && (
+                      <div className="mt-2 flex flex-col gap-1">
+                        <p className="text-[10px] text-gray-500 font-semibold">{cjrResult.length} CJR subcategor{cjrResult.length !== 1 ? 'ies' : 'y'}:</p>
+                        {cjrResult.map((cjr, i) => (
+                          <button
+                            key={i}
+                            onClick={() => setSelectedCJRIndex(idx => idx === i ? null : i)}
+                            className={`text-left text-[10px] font-mono rounded px-2 py-1 transition-colors ${selectedCJRIndex === i ? 'bg-red-100 text-red-900 border border-red-400' : 'bg-gray-50 text-gray-700 hover:bg-red-50'}`}
+                          >
+                            {cjr.map(m => m.label).join(' ⊕ ')}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {selectedMoreFunc === 'mar-cjr' && marCjrResult && (
+                      <div className="mt-2 flex flex-col gap-1">
+                        <div className="flex items-center justify-between">
+                          <p className="text-[10px] text-gray-500 font-semibold">{marCjrResult.length} pair{marCjrResult.length !== 1 ? 's' : ''}:</p>
+                          <button
+                            onClick={() => {
+                              if (!state) return
+                              const modules = generateIndecomposables(state.quiver.n)
+                              const ses = getActiveSES()
+                              const incompatible = new Set<string>()
+                              for (const s of ses) { incompatible.add(`${s.left.id}|${s.right.id}`); incompatible.add(`${s.right.id}|${s.left.id}`) }
+                              const tilts = tiltingList ?? (() => {
+                                const t: Module[][] = []
+                                for (const subset of combinations(modules, state.quiver.n)) {
+                                  let rigid = true
+                                  outer: for (let i = 0; i < subset.length; i++) { for (let j = i + 1; j < subset.length; j++) { if (incompatible.has(`${subset[i].id}|${subset[j].id}`)) { rigid = false; break outer } } }
+                                  if (rigid) t.push(subset)
+                                }
+                                return t
+                              })()
+                              const interSets = marCjrResult.map(p => new Set(p.modules.map(m => m.id)))
+                              const missing = tilts.filter(T => {
+                                const tIds = T.map(m => m.id)
+                                return !interSets.some(inter => tIds.every(id => inter.has(id)))
+                              })
+                              setMarCjrVerify({ ok: missing.length === 0, missing }); setSelectedMissingTilting(null)
+                            }}
+                            className="text-[9px] px-1.5 py-0.5 rounded border border-gray-300 text-gray-500 hover:bg-gray-100 transition-colors"
+                          >Verify</button>
+                          {marCjrVerify && (
+                            <span className={`text-[9px] font-semibold ${marCjrVerify.ok ? 'text-green-600' : 'text-red-600'}`}>
+                              {marCjrVerify.ok ? '✓ All tiltings covered' : `✗ ${marCjrVerify.missing.length} tilting${marCjrVerify.missing.length > 1 ? 's' : ''} missing`}
+                            </span>
+                          )}
+                        </div>
+                        {marCjrVerify && !marCjrVerify.ok && marCjrVerify.missing.length > 0 && (
+                          <div className="mb-1 flex flex-col gap-0.5">
+                            <p className="text-[9px] text-red-500 font-semibold">Missing tiltings:</p>
+                            {marCjrVerify.missing.map((T, i) => {
+                              const ids = new Set(T.map(m => m.id))
+                              const isSelected = selectedMissingTilting && [...ids].every(id => selectedMissingTilting.has(id)) && selectedMissingTilting.size === ids.size
+                              return (
+                                <button key={i}
+                                  onClick={() => setSelectedMissingTilting(isSelected ? null : ids)}
+                                  className={`text-left text-[10px] font-mono rounded px-2 py-0.5 transition-colors ${isSelected ? 'bg-orange-100 text-orange-900 border border-orange-400' : 'bg-red-50 text-red-800 hover:bg-orange-50'}`}
+                                >
+                                  {T.map(m => m.label).join(' ⊕ ')}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        )}
+                        {marCjrResult.map((pair, i) => (
+                          <button
+                            key={i}
+                            onClick={() => { setSelectedMarCjrIndex(idx => idx === i ? null : i); setMarCjrOverlay({ mar: false, cjr: false, inter: true }) }}
+                            className={`text-left text-[10px] font-mono rounded px-2 py-1 transition-colors ${selectedMarCjrIndex === i ? 'bg-violet-100 text-violet-900 border border-violet-400' : 'bg-gray-50 text-gray-700 hover:bg-violet-50'}`}
+                          >
+                            <span className="text-yellow-700">M{pair.marIdx + 1}</span> ∩ <span className="text-red-700">C{pair.cjrIdx + 1}</span>: {pair.modules.length ? pair.modules.map(m => m.label).join(' ⊕ ') : '∅'}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </section>
           )}
 
@@ -1348,10 +1623,28 @@ export default function App() {
                       : `Tilting D_${q.n}`}
                   </span>
                   {view === 'ar' && (
-                    <button
-                      onClick={() => setShowTauArrows(v => !v)}
-                      className={`text-xs px-2 py-0.5 rounded border font-normal normal-case tracking-normal transition-colors ${showTauArrows ? 'bg-gray-700 text-white border-gray-700' : 'border-gray-300 text-gray-500 hover:bg-gray-100'}`}
-                    >{showTauArrows ? 'Hide' : 'Show'} AR translation</button>
+                    <>
+                      <button
+                        onClick={() => setShowTauArrows(v => !v)}
+                        className={`text-xs px-2 py-0.5 rounded border font-normal normal-case tracking-normal transition-colors ${showTauArrows ? 'bg-gray-700 text-white border-gray-700' : 'border-gray-300 text-gray-500 hover:bg-gray-100'}`}
+                      >{showTauArrows ? 'Hide' : 'Show'} AR translation</button>
+                      {selectedMarCjrIndex !== null && marCjrResult && (
+                        <>
+                          <button
+                            onClick={() => setMarCjrOverlay(v => ({ ...v, mar: !v.mar }))}
+                            className={`text-xs px-2 py-0.5 rounded border font-normal normal-case tracking-normal transition-colors ${marCjrOverlay.mar ? 'bg-yellow-300 border-yellow-500 text-yellow-900' : 'bg-gray-100 border-gray-300 text-gray-400 hover:bg-yellow-50'}`}
+                          >{marCjrOverlay.mar ? 'Hide' : 'Show'} MAR</button>
+                          <button
+                            onClick={() => setMarCjrOverlay(v => ({ ...v, cjr: !v.cjr }))}
+                            className={`text-xs px-2 py-0.5 rounded border font-normal normal-case tracking-normal transition-colors ${marCjrOverlay.cjr ? 'bg-red-300 border-red-500 text-red-900' : 'bg-gray-100 border-gray-300 text-gray-400 hover:bg-red-50'}`}
+                          >{marCjrOverlay.cjr ? 'Hide' : 'Show'} CJR</button>
+                          <button
+                            onClick={() => setMarCjrOverlay(v => ({ ...v, inter: !v.inter }))}
+                            className={`text-xs px-2 py-0.5 rounded border font-normal normal-case tracking-normal transition-colors ${marCjrOverlay.inter ? 'bg-violet-300 border-violet-500 text-violet-900' : 'bg-gray-100 border-gray-300 text-gray-400 hover:bg-violet-50'}`}
+                          >{marCjrOverlay.inter ? 'Hide' : 'Show'} Inter</button>
+                        </>
+                      )}
+                    </>
                   )}
                 </span>
                 {view === 'lattice' && (
@@ -1502,7 +1795,27 @@ export default function App() {
                       selectedDSES={selectedDSES} selectedDTilting={selectedDTilting} showTau={showTauArrows}
                       gsHighlight={dGsHighlight} />
                   : view === 'ar'
-                  ? <ARQuiverViewer arQuiver={state.arQuiver} quiver={q} onPositions={setXPositions} onYPositions={setYPositions} selectedSES={selectedSES} badges={hideExactOverlay ? [] : badges} selectedTilting={selectedTilting} gsHighlight={gsHighlight} showTauArrows={showTauArrows} sesRects={hideExactOverlay ? [] : (
+                  ? <ARQuiverViewer arQuiver={state.arQuiver} quiver={q} onPositions={setXPositions} onYPositions={setYPositions} selectedSES={selectedSES} badges={hideExactOverlay ? [] : badges} selectedTilting={selectedTilting} gsHighlight={gsHighlight} showTauArrows={showTauArrows} highlightedIds={
+                      selectedMarCjrIndex !== null && marCjrResult && marCjrOverlay.mar && marResult
+                        ? new Set(marResult[marCjrResult[selectedMarCjrIndex].marIdx].map(m => m.id))
+                        : selectedMARIndex !== null && marResult
+                        ? new Set(marResult[selectedMARIndex].map(m => m.id))
+                        : null
+                    }
+                    highlightedIdsRed={
+                      selectedMarCjrIndex !== null && marCjrResult && marCjrOverlay.cjr && cjrResult
+                        ? new Set(cjrResult[marCjrResult[selectedMarCjrIndex].cjrIdx].map(m => m.id))
+                        : selectedCJRIndex !== null && cjrResult
+                        ? new Set(cjrResult[selectedCJRIndex].map(m => m.id))
+                        : null
+                    }
+                    highlightedIdsViolet={
+                      selectedMarCjrIndex !== null && marCjrResult && marCjrOverlay.inter
+                        ? new Set(marCjrResult[selectedMarCjrIndex].modules.map(m => m.id))
+                        : null
+                    }
+                    highlightedIdsOrange={selectedMissingTilting ?? null}
+                    sesRects={hideExactOverlay ? [] : (
                       selectedExactStructure != null
                         ? selectedExactStructure.flatMap(idx => { const r = arSES[idx - 1]?.rect; return r ? [r] : [] })
                         : selectedSES?.rect ? [selectedSES.rect] : []
